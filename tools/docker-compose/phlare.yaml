@@ -7,6 +7,10 @@ scrape_configs:
     scrape_interval: "15s"
     static_configs:
       - targets: ["grafana:6060"]
+  - job_name: "random"
+    scrape_interval: "15s"
+    static_configs:
+      - targets: ["random:6060"]
   - job_name: "cp-rust"
     scrape_interval: "15s"
     static_configs:

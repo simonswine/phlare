@@ -46,34 +46,35 @@ services:
       - 8082:8080
     networks:
       - phlare
-  java-simple:
+  #java-simple:
+  #  build:
+  #    context: java/simple
+  #    dockerfile: Dockerfile
+  #  security_opt:
+  #    - seccomp:seccomp.json
+  #  ports:
+  #    - 8083:8080
+  #  networks:
+  #    - phlare
+  #java-springboot:
+  #  build:
+  #    context: java/springboot
+  #    dockerfile: Dockerfile
+  #  security_opt:
+  #    - seccomp:seccomp.json
+  #  ports:
+  #    - 8084:8080
+  #  networks:
+  #    - phlare
+  random:
     build:
-      context: java/simple
-      dockerfile: Dockerfile
-    security_opt:
-      - seccomp:seccomp.json
-    ports:
-      - 8083:8080
-    networks:
-      - phlare
-  java-springboot:
-    build:
-      context: java/springboot
-      dockerfile: Dockerfile
-    security_opt:
-      - seccomp:seccomp.json
-    ports:
-      - 8084:8080
-    networks:
-      - phlare
-  golang:
-    build:
-      context: golang
+      context: golang-random
       dockerfile: Dockerfile
     ports:
       - 8085:6060
     networks:
       - phlare
+
 
 volumes:
   data:
