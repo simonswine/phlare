@@ -394,14 +394,21 @@ func NewErrIterator(err error) Iterator {
 	return iter.NewErrSeekIterator[*IteratorResult, RowNumberWithDefinitionLevel](err)
 }
 
-var iteratorResultPool = sync.Pool{
-	New: func() interface{} {
-		return &IteratorResult{Entries: make([]struct {
-			k        string
-			V        parquet.Value
-			RowValue interface{}
-		}, 0, 10)} // For luck
-	},
+type pooler interface {
+	Get() any
+	Put(any)
+}
+
+var iteratorResultPool pooler = &sync.Pool{
+	New: newIteratorResultPoolElement,
+}
+
+func newIteratorResultPoolElement() interface{} {
+	return &IteratorResult{Entries: make([]struct {
+		k        string
+		V        parquet.Value
+		RowValue interface{}
+	}, 0, 10)} // For luck
 }
 
 func iteratorResultPoolGet() *IteratorResult {

@@ -372,6 +372,8 @@ func TestBinaryJoinIterator(t *testing.T) {
 	rowCount := 1600
 	pf := createProfileLikeFile(t, rowCount)
 
+	corruptIteratorResultPool(t)
+
 	for _, tc := range []struct {
 		name                string
 		seriesPredicate     Predicate
@@ -473,6 +475,33 @@ type rowGetter int64
 
 func (r rowGetter) RowNumber() int64 {
 	return int64(r)
+}
+
+type corruptingPool struct {
+}
+
+func (_ *corruptingPool) Get() any {
+	return newIteratorResultPoolElement()
+}
+
+func (_ *corruptingPool) Put(obj any) {
+	result, ok := obj.(*IteratorResult)
+	if !ok {
+		return
+	}
+
+	result.RowNumber[0] = 1
+	result.Entries = result.Entries[:0]
+	fmt.Printf("%T, %+#v\n", obj, obj)
+}
+
+func corruptIteratorResultPool(t testing.TB) {
+	oldPool := iteratorResultPool
+	iteratorResultPool = &corruptingPool{}
+
+	t.Cleanup(func() {
+		iteratorResultPool = oldPool
+	})
 }
 
 func TestRowNumberIterator(t *testing.T) {
