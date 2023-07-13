@@ -1108,3 +1108,6 @@ func Test_splitQueryToStores(t *testing.T) {
 // 	}
 // 	return clients, nil
 // }
+
+func Test_Head_Concurrent(t *testing.T) {
+}

@@ -35,18 +35,26 @@ func (n noLimit) Stop() {}
 
 var NoLimit = noLimit{}
 
-func newTestHead(t testing.TB) *testHead {
-	dataPath := t.TempDir()
+func NewTestHead(t testing.TB) *testHead {
 	ctx := testContext(t)
-	head, err := NewHead(ctx, Config{DataPath: dataPath}, NoLimit)
+	h := &testHead{
+		dataPath: t.TempDir(),
+		t:        t,
+		ctx:      ctx,
+		reg:      phlarecontext.Registry(ctx).(*prometheus.Registry),
+	}
+	var err error
+	h.Head, err = NewHead(ctx, Config{DataPath: h.dataPath}, NoLimit)
 	require.NoError(t, err)
-	return &testHead{Head: head, t: t, reg: phlarecontext.Registry(ctx).(*prometheus.Registry)}
+	return h
 }
 
 type testHead struct {
 	*Head
-	t   testing.TB
-	reg *prometheus.Registry
+	t        testing.TB
+	ctx      context.Context
+	dataPath string
+	reg      *prometheus.Registry
 }
 
 func (t *testHead) Flush(ctx context.Context) error {
@@ -181,7 +189,7 @@ func newProfileBaz() *profilev1.Profile {
 }
 
 func TestHeadMetrics(t *testing.T) {
-	head := newTestHead(t)
+	head := NewTestHead(t)
 	require.NoError(t, head.Ingest(context.Background(), newProfileFoo(), uuid.New()))
 	require.NoError(t, head.Ingest(context.Background(), newProfileBar(), uuid.New()))
 	require.NoError(t, head.Ingest(context.Background(), newProfileBaz(), uuid.New()))
@@ -216,7 +224,7 @@ pyroscope_head_size_bytes{type="strings"} 52
 }
 
 func TestHeadIngestFunctions(t *testing.T) {
-	head := newTestHead(t)
+	head := NewTestHead(t)
 
 	require.NoError(t, head.Ingest(context.Background(), newProfileFoo(), uuid.New()))
 	require.NoError(t, head.Ingest(context.Background(), newProfileBar(), uuid.New()))
@@ -231,7 +239,7 @@ func TestHeadIngestFunctions(t *testing.T) {
 
 func TestHeadIngestStrings(t *testing.T) {
 	ctx := context.Background()
-	head := newTestHead(t)
+	head := NewTestHead(t)
 
 	r := &rewriter{}
 	require.NoError(t, head.strings.ingest(ctx, newProfileFoo().StringTable, r))
@@ -251,7 +259,7 @@ func TestHeadIngestStrings(t *testing.T) {
 
 func TestHeadIngestStacktraces(t *testing.T) {
 	ctx := context.Background()
-	head := newTestHead(t)
+	head := NewTestHead(t)
 
 	require.NoError(t, head.Ingest(ctx, newProfileFoo(), uuid.MustParse("00000000-0000-0000-0000-00000000000a")))
 	require.NoError(t, head.Ingest(ctx, newProfileBar(), uuid.MustParse("00000000-0000-0000-0000-00000000000b")))
@@ -277,7 +285,7 @@ func TestHeadIngestStacktraces(t *testing.T) {
 }
 
 func TestHeadLabelValues(t *testing.T) {
-	head := newTestHead(t)
+	head := NewTestHead(t)
 	require.NoError(t, head.Ingest(context.Background(), newProfileFoo(), uuid.New(), &typesv1.LabelPair{Name: "job", Value: "foo"}, &typesv1.LabelPair{Name: "namespace", Value: "phlare"}))
 	require.NoError(t, head.Ingest(context.Background(), newProfileBar(), uuid.New(), &typesv1.LabelPair{Name: "job", Value: "bar"}, &typesv1.LabelPair{Name: "namespace", Value: "phlare"}))
 
@@ -291,7 +299,7 @@ func TestHeadLabelValues(t *testing.T) {
 }
 
 func TestHeadLabelNames(t *testing.T) {
-	head := newTestHead(t)
+	head := NewTestHead(t)
 	require.NoError(t, head.Ingest(context.Background(), newProfileFoo(), uuid.New(), &typesv1.LabelPair{Name: "job", Value: "foo"}, &typesv1.LabelPair{Name: "namespace", Value: "phlare"}))
 	require.NoError(t, head.Ingest(context.Background(), newProfileBar(), uuid.New(), &typesv1.LabelPair{Name: "job", Value: "bar"}, &typesv1.LabelPair{Name: "namespace", Value: "phlare"}))
 
@@ -301,7 +309,7 @@ func TestHeadLabelNames(t *testing.T) {
 }
 
 func TestHeadSeries(t *testing.T) {
-	head := newTestHead(t)
+	head := NewTestHead(t)
 	fooLabels := phlaremodel.NewLabelsBuilder(nil).Set("namespace", "phlare").Set("job", "foo").Labels()
 	barLabels := phlaremodel.NewLabelsBuilder(nil).Set("namespace", "phlare").Set("job", "bar").Labels()
 	require.NoError(t, head.Ingest(context.Background(), newProfileFoo(), uuid.New(), fooLabels...))
@@ -322,7 +330,7 @@ func TestHeadSeries(t *testing.T) {
 }
 
 func TestHeadProfileTypes(t *testing.T) {
-	head := newTestHead(t)
+	head := NewTestHead(t)
 	require.NoError(t, head.Ingest(context.Background(), newProfileFoo(), uuid.New(), &typesv1.LabelPair{Name: "__name__", Value: "foo"}, &typesv1.LabelPair{Name: "job", Value: "foo"}, &typesv1.LabelPair{Name: "namespace", Value: "phlare"}))
 	require.NoError(t, head.Ingest(context.Background(), newProfileBar(), uuid.New(), &typesv1.LabelPair{Name: "__name__", Value: "bar"}, &typesv1.LabelPair{Name: "namespace", Value: "phlare"}))
 
@@ -349,7 +357,7 @@ func TestHeadIngestRealProfiles(t *testing.T) {
 		"testdata/profile_java",
 	}
 
-	head := newTestHead(t)
+	head := NewTestHead(t)
 	ctx := context.Background()
 
 	for pos := range profilePaths {
@@ -364,19 +372,19 @@ func TestHeadIngestRealProfiles(t *testing.T) {
 	t.Logf("strings=%d samples=%d", len(head.strings.slice), head.totalSamples.Load())
 }
 
+func (t *testHead) WithProfilesParquetConfig(cfg *ParquetConfig) *testHead {
+	t.Head.profiles.cfg = cfg
+	return t
+}
+
 // TestHead_Concurrent_Ingest_Querying tests that the head can handle concurrent reads and writes.
 func TestHead_Concurrent_Ingest_Querying(t *testing.T) {
-	var (
-		ctx = testContext(t)
-		cfg = Config{
-			DataPath: t.TempDir(),
-		}
-		head, err = NewHead(ctx, cfg, NoLimit)
-	)
-	require.NoError(t, err)
-
+	head := NewTestHead(t)
 	// force different row group segements for profiles
-	head.profiles.cfg = &ParquetConfig{MaxRowGroupBytes: 128000, MaxBufferRowCount: 10}
+	head.WithProfilesParquetConfig(&ParquetConfig{MaxRowGroupBytes: 128000, MaxBufferRowCount: 10})
+
+	ctx, cancel := context.WithCancel(head.ctx)
+	defer cancel()
 
 	wg := sync.WaitGroup{}
 
@@ -456,7 +464,7 @@ func BenchmarkHeadIngestProfiles(t *testing.B) {
 		profileCount = 0
 	)
 
-	head := newTestHead(t)
+	head := NewTestHead(t)
 	ctx := context.Background()
 
 	t.ReportAllocs()
