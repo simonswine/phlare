@@ -1064,11 +1064,14 @@ func (q *singleBlockQuerier) openFiles(ctx context.Context) error {
 		return nil
 	}))
 
+	ctx = contextWithBlockMetrics(ctx, q.metrics)
+	ctx = contextWithBlockULID(ctx, q.meta.ULID.String())
+
 	// open parquet files
 	for _, tableReader := range q.tables {
 		tableReader := tableReader
 		g.Go(util.RecoverPanic(func() error {
-			if err := tableReader.open(contextWithBlockMetrics(ctx, q.metrics), q.bkt); err != nil {
+			if err := tableReader.open(ctx, q.bkt); err != nil {
 				return err
 			}
 			return nil
@@ -1090,6 +1093,37 @@ type parquetReader[M Models, P schemav1.PersisterName] struct {
 	reader    phlareobj.ReaderAtCloser
 	size      int64
 	metrics   *blocksMetrics
+
+	readerCreator parquet.ReaderCreator
+}
+
+type forwardSeeker struct {
+	io.ReadCloser
+	pos int64
+}
+
+func (s *forwardSeeker) Read(p []byte) (int, error) {
+	n, err := s.ReadCloser.Read(p)
+	if err != nil {
+		s.pos += int64(n)
+	}
+	return n, err
+}
+
+func (s *forwardSeeker) Seek(offset int64, whence int) (int64, error) {
+	if whence != io.SeekStart {
+		return 0, fmt.Errorf("any other whence then SeekStart is not supported")
+	}
+
+	diff := offset - s.pos
+	if diff < 0 {
+		return 0, fmt.Errorf("seeking before current position is not supported")
+	} else if diff == 0 {
+		return diff, nil
+	}
+
+	return io.CopyN(io.Discard, s, diff)
+
 }
 
 func (r *parquetReader[M, P]) open(ctx context.Context, bucketReader phlareobj.BucketReader) error {
@@ -1130,6 +1164,26 @@ func (r *parquetReader[M, P]) open(ctx context.Context, bucketReader phlareobj.B
 		return errors.Wrapf(err, "opening parquet file '%s'", filePath)
 	}
 
+	// instatiate the reader creator
+	r.readerCreator = func(rctx context.Context, offset, length int64) parquet.FileReader {
+		sp, rctx := opentracing.StartSpanFromContext(rctx, "BlockQuerier - readerCreator")
+		defer sp.Finish()
+		sp.LogFields(
+			otlog.String("relative_path", filePath),
+			otlog.String("block_id", contextBlockULID(ctx)),
+			otlog.Int64("offset", offset),
+			otlog.Int64("length", length),
+		)
+
+		reader, err := bucketReader.GetRange(rctx, filePath, offset, length)
+		if err != nil {
+			// TODO log instead
+			panic(err)
+		}
+
+		return &forwardSeeker{ReadCloser: reader}
+	}
+
 	return nil
 }
 
@@ -1151,7 +1205,10 @@ func (r *parquetReader[M, P]) columnIter(ctx context.Context, columnName string,
 	if index == -1 {
 		return query.NewErrIterator(fmt.Errorf("column '%s' not found in parquet file '%s'", columnName, r.relPath()))
 	}
+
+	ctx = parquet.AddReaderCreatorToContext(ctx, r.readerCreator)
 	ctx = query.AddMetricsToContext(ctx, r.metrics.query)
+
 	return query.NewSyncIterator(ctx, r.file.RowGroups(), index, columnName, 1000, predicate, alias)
 }
 

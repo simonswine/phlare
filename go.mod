@@ -281,6 +281,7 @@ replace (
 	github.com/hashicorp/memberlist => github.com/grafana/memberlist v0.3.1-0.20220708130638-bd88e10a3d91
 	// Using a fork of Prometheus with Mimir-specific changes.
 	github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20230505111100-e5eb66f42202
+	github.com/segmentio/parquet-go => github.com/simonswine/parquet-go v0.0.0-20230717152059-4a45ee59f239
 	github.com/thanos-io/objstore => github.com/simonswine/objstore v0.0.0-20230525103805-ffb0b7c6481f
 	// gopkg.in/yaml.v3
 	// + https://github.com/go-yaml/yaml/pull/691

@@ -1186,6 +1186,10 @@ func (c *SyncIterator) next() (RowNumber, *parquet.Value, error) {
 	}
 }
 
+type pagesWithContext interface {
+	PagesWithContext(ctx context.Context) parquet.Pages
+}
+
 func (c *SyncIterator) setRowGroup(rg parquet.RowGroup, min, max RowNumber) {
 	c.closeCurrRowGroup()
 	c.curr = min
@@ -1193,7 +1197,13 @@ func (c *SyncIterator) setRowGroup(rg parquet.RowGroup, min, max RowNumber) {
 	c.currRowGroupMin = min
 	c.currRowGroupMax = max
 	c.currChunk = rg.ColumnChunks()[c.column]
-	c.currPages = c.currChunk.Pages()
+
+	if cc, ok := c.currChunk.(pagesWithContext); ok {
+		c.currPages = cc.PagesWithContext(c.ctx)
+	} else {
+		c.currPages = c.currChunk.Pages()
+	}
+
 }
 
 func (c *SyncIterator) setPage(pg parquet.Page) {
